@@ -2,42 +2,48 @@ package tapl
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should
-import Untyped._
+import tapl.core.{Context, Term, TmAbs, TmApp, TmVar, Ty, TyBool, termString}
+import tapl.parser._
 
 class UntypedTest extends AnyFlatSpec with should.Matchers {
   import UntypedTest._
 
   "termString" should "output correct format string" in {
     val data = Seq(
-      (abstraction("x", variable(0, 1)), "(lambda x. x)"),
-      (abstraction("a", apply(TmVar(0, 1), TmVar(0, 1))), "(lambda a. (a a))"),
+      (lambda("x", TyBool, variable(0, 1)), "(lambda x: Bool. x)"),
       (
-        abstraction(
-          "a",
-          abstraction("b", apply(variable(0, 2), variable(1, 2)))
-        ),
-        "(lambda a. (lambda b. (b a)))"
+        lambda("a", TyBool, apply(TmVar(0, 1), TmVar(0, 1))),
+        "(lambda a: Bool. (a a))"
       ),
       (
-        abstraction(
+        lambda(
           "a",
-          abstraction("a", apply(variable(0, 2), variable(1, 2)))
+          TyBool,
+          lambda("b", TyBool, apply(variable(0, 2), variable(1, 2)))
         ),
-        "(lambda a. (lambda a'. (a' a)))"
+        "(lambda a: Bool. (lambda b: Bool. (b a)))"
+      ),
+      (
+        lambda(
+          "a",
+          TyBool,
+          lambda("a", TyBool, apply(variable(0, 2), variable(1, 2)))
+        ),
+        "(lambda a: Bool. (lambda a': Bool. (a' a)))"
       ),
       (
         apply(
-          abstraction("a", variable(0, 1)),
-          abstraction("a", apply(variable(0, 1), variable(0, 1)))
+          lambda("a", TyBool, variable(0, 1)),
+          lambda("a", TyBool, apply(variable(0, 1), variable(0, 1)))
         ),
-        "((lambda a. a) (lambda a. (a a)))"
+        "((lambda a: Bool. a) (lambda a: Bool. (a a)))"
       ),
       (
         apply(
-          abstraction("a", variable(0, 1)),
-          abstraction("b", apply(variable(0, 1), variable(0, 1)))
+          lambda("a", TyBool, variable(0, 1)),
+          lambda("b", TyBool, apply(variable(0, 1), variable(0, 1)))
         ),
-        "((lambda a. a) (lambda b. (b b)))"
+        "((lambda a: Bool. a) (lambda b: Bool. (b b)))"
       )
     )
 
@@ -49,39 +55,66 @@ class UntypedTest extends AnyFlatSpec with should.Matchers {
 
   "shift" should "shift index" in {
     val data = Seq(
-      (abstraction("a", variable(0, 1)), abstraction("a", variable(0, 2))),
+      (
+        lambda("a", TyBool, variable(0, 1)),
+        lambda("a", TyBool, variable(0, 2))
+      ),
       // no free variables
       (
-        abstraction(
+        lambda(
           "a",
-          abstraction("b", apply(variable(0, 2), variable(1, 2)))
+          TyBool,
+          lambda("b", TyBool, apply(variable(0, 2), variable(1, 2)))
         ),
-        abstraction(
+        lambda(
           "a",
-          abstraction("b", apply(variable(0, 3), variable(1, 3)))
+          TyBool,
+          lambda("b", TyBool, apply(variable(0, 3), variable(1, 3)))
         )
       ),
       // one free variable
       (
-        abstraction(
+        lambda(
           "a",
-          abstraction("b", apply(variable(0, 2),
-            // free variable's index should be shifted
-            variable(2, 2)))
+          TyBool,
+          lambda(
+            "b",
+            TyBool,
+            apply(
+              variable(0, 2),
+              // free variable's index should be shifted
+              variable(2, 2)
+            )
+          )
         ),
-        abstraction(
+        lambda(
           "a",
-          abstraction("b", apply(variable(0, 3), variable(3, 3)))
+          TyBool,
+          lambda("b", TyBool, apply(variable(0, 3), variable(3, 3)))
         )
       )
     )
     for ((term, expected) <- data)
       term.shift(1) should be(expected)
   }
+
+  "parse" should "work" in {
+    startParse("(lambda x: Bool. x)") should be(
+      Some(lambda("x", TyBool, variable(0, 1)))
+    )
+    startParse("((lambda x: Bool. x) (lambda x: Bool.x))") should be(
+      Some(
+        apply(
+          lambda("x", TyBool, variable(0, 1)),
+          lambda("x", TyBool, variable(0, 1))
+        )
+      )
+    )
+  }
 }
 
 object UntypedTest {
   def variable(i: Int, ctxLen: Int) = TmVar(i, ctxLen)
-  def abstraction(x: String, t: Term) = TmAbs(x, t)
+  def lambda(x: String, ty: Ty, t: Term) = TmAbs(x, ty, t)
   def apply(t0: Term, t1: Term) = TmApp(t0, t1)
 }
